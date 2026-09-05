@@ -9,6 +9,7 @@ from ingest import (
     query_vector_index,
     query_graph_index,
 )
+from ai_search import search_and_answer
 
 # --- Configuration ---
 PERSIST_DIR = "storage"  # under this, vector/ and graph/ will be stored
@@ -63,26 +64,28 @@ def main():
     if indices:
         st.info("Indices loaded. You can ask questions below.")
 
-    question = st.text_input("Ask a question about your PDFs", "")
-    col1, col2 = st.columns(2)
+    st.header("AI Search")
+    query = st.text_input("Enter a search query", "")
+    col1, col2 = st.columns([1, 1])
+    top_k = col1.number_input("Top K", min_value=1, max_value=20, value=5)
+    rerank = col2.checkbox("Use LLM reranker", value=True)
+    generate_answer = st.checkbox("Generate final answer via LLM", value=True)
 
-    if st.button("Ask (Vector RAG)"):
-        if not indices or not indices.get("vector_index"):
-            st.error("Load or create indices first.")
+    if st.button("Search"):
+        if not query:
+            st.error("Please enter a query.")
         else:
-            with st.spinner("Querying vector index..."):
-                resp = query_vector_index(indices["vector_index"], question)
-                st.markdown("**Answer (Vector RAG):**")
-                st.write(resp)
+            with st.spinner("Running AI search..."):
+                res = search_and_answer(query, top_k=top_k, rerank=rerank, generate_answer=generate_answer, openai_api_key=openai_key or None)
+                st.subheader("Search hits")
+                for i, h in enumerate(res.get("hits", [])):
+                    st.write(f"{i+1}. (score: {h.get('score') or h.get('rerank_score') or ''}) - {h.get('filename')} [chunk {h.get('chunk_index')}]")
+                    st.write(h.get("text"))
+                    st.markdown("---")
 
-    if st.button("Ask (Graph)"):
-        if not indices or not indices.get("graph_index"):
-            st.error("Load or create indices first.")
-        else:
-            with st.spinner("Querying knowledge graph index..."):
-                resp = query_graph_index(indices["graph_index"], question)
-                st.markdown("**Answer (Graph):**")
-                st.write(resp)
+                if generate_answer:
+                    st.subheader("Answer")
+                    st.write(res.get("answer"))
 
     st.sidebar.markdown("---")
     st.sidebar.markdown(
